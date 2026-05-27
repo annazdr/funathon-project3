@@ -523,3 +523,200 @@ ImageOverlay(
 
 m
 # %%
+import urllib.request
+import io
+import numpy as np
+
+# Label URL for a LU000 patch, year 2021
+label_url = (
+    "https://minio.lab.sspcloud.fr/projet-funathon/2026/"
+    "project3/data/labels/LU000/"
+    "2021/4042000_2951690_0_637.npy"
+)
+
+with urllib.request.urlopen(label_url) as response:
+    label_array = np.load(io.BytesIO(response.read()))
+
+print(f"Label shape: {label_array.shape}")
+print(f"Data type:   {label_array.dtype}")
+print(f"Classes:     {np.unique(label_array)}")
+
+
+# %%
+import rasterio
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+from matplotlib.patches import Patch
+
+# CLC+ class names and colours
+classes = [
+    ("Sealed (1)", "#FF0100"),
+    ("Woody -- needle leaved trees (2)", "#238B23"),
+    ("Woody -- Broadleaved deciduous trees (3)", "#80FF00"),
+    ("Woody -- Broadleaved evergreen trees (4)", "#00FF00"),
+    ("Low-growing woody plants (bushes, shrubs) (5)", "#804000"),
+    ("Permanent herbaceous (6)", "#CCF24E"),
+    ("Periodically herbaceous (7)", "#FEFF80"),
+    ("Lichens and mosses (8)", "#FF81FF"),
+    ("Non- and sparsely-vegetated (9)", "#BFBFBF"),
+    ("Water (10)", "#0080FF"),
+]
+cmap = ListedColormap([color for _, color in classes])
+
+# Load the matching satellite image
+image_url = (
+    "https://minio.lab.sspcloud.fr/projet-funathon/2026/"
+    "project3/data/images/LU000/"
+    "2021/4042000_2951690_0_637.tif"
+)
+with rasterio.open(image_url) as src:
+    rgb_data = src.read([4, 3, 2])
+
+rgb = np.transpose(rgb_data, (1, 2, 0)).astype(np.float32)
+rgb = np.clip(rgb / np.percentile(rgb, 98), 0, 1)
+
+# Side-by-side plot
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+axes[0].imshow(rgb)
+axes[0].set_title("Sentinel-2 RGB")
+axes[0].axis("off")
+
+axes[1].imshow(label_array, cmap=cmap, vmin=1, vmax=10)
+axes[1].set_title("CLC+ Backbone label")
+axes[1].axis("off")
+
+legend_elements = [
+    Patch(facecolor=color, edgecolor="black", label=label)
+    for label, color in classes
+]
+fig.legend(
+    handles=legend_elements,
+    loc="center right",
+    bbox_to_anchor=(1.30, 0.5),
+    frameon=True,
+)
+plt.tight_layout()
+plt.show()
+
+# %%
+import urllib.request
+import io
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+
+nuts_code = "LU000"
+year = 2021
+patch_id = "4042000_2951690_0_637"
+
+label_url = f"https://minio.lab.sspcloud.fr/projet-funathon/2026/project3/data/labels/{nuts_code}/{year}/{patch_id}.npy"
+
+with urllib.request.urlopen(label_url) as response:
+    my_label = np.load(io.BytesIO(response.read()))
+
+print(f"Shape: {my_label.shape}")
+print(f"Classes: {np.unique(my_label)}")
+
+cmap = ListedColormap(
+    [
+        "#FF0100",
+        "#238B23",
+        "#80FF00",
+        "#00FF00",
+        "#804000",
+        "#CCF24E",
+        "#FEFF80",
+        "#FF81FF",
+        "#BFBFBF",
+        "#0080FF",
+    ]
+)
+
+fig, ax = plt.subplots(figsize=(5, 5))
+ax.imshow(my_label, cmap=cmap, vmin=1, vmax=10)
+ax.set_title(f"CLC+ label — {nuts_code}/{year}/{patch_id}")
+ax.axis("off")
+plt.show()
+
+
+# %%
+import numpy as np
+import urllib.request
+import io
+import rasterio
+import folium
+from rasterio.warp import transform_bounds
+from matplotlib.colors import to_rgba
+
+classes = [
+    ("Sealed (1)", "#FF0100"),
+    ("Woody -- needle leaved trees (2)", "#238B23"),
+    ("Woody -- Broadleaved deciduous trees (3)", "#80FF00"),
+    ("Woody -- Broadleaved evergreen trees (4)", "#00FF00"),
+    ("Low-growing woody plants (bushes, shrubs) (5)", "#804000"),
+    ("Permanent herbaceous (6)", "#CCF24E"),
+    ("Periodically herbaceous (7)", "#FEFF80"),
+    ("Lichens and mosses (8)", "#FF81FF"),
+    ("Non- and sparsely-vegetated (9)", "#BFBFBF"),
+    ("Water (10)", "#0080FF"),
+]
+
+# Step 1: Load satellite image
+image_url = (
+    "https://minio.lab.sspcloud.fr/projet-funathon/2026/"
+    "project3/data/images/LU000/"
+    "2021/4017000_2974190_0_402.tif"
+)
+with rasterio.open(image_url) as src:
+    rgb_data = src.read([4, 3, 2])
+    bounds_3035 = src.bounds
+    crs = src.crs
+
+rgb_overlay = np.transpose(rgb_data, (1, 2, 0)).astype(np.float32)
+rgb_overlay = np.clip(rgb_overlay / np.percentile(rgb_overlay, 98), 0, 1)
+
+# Step 2: Load the matching label
+label_url = (
+    "https://minio.lab.sspcloud.fr/projet-funathon/2026/"
+    "project3/data/labels/LU000/"
+    "2021/4017000_2974190_0_402.npy"
+)
+with urllib.request.urlopen(label_url) as response:
+    label = np.load(io.BytesIO(response.read()))
+
+# Step 3: Convert label to RGBA
+color_lut = np.zeros((11, 4), dtype=np.float32)
+color_lut[0] = [0, 0, 0, 0]
+for i, (_, hex_color) in enumerate(classes, start=1):
+    color_lut[i] = list(to_rgba(hex_color, alpha=0.7))
+
+label_rgba = color_lut[label]
+
+# Step 4: Reproject bounds to WGS84
+west, south, east, north = transform_bounds(crs, "EPSG:4326", *bounds_3035)
+
+center_lat = (south + north) / 2
+center_lon = (west + east) / 2
+
+# Step 5: Create the map
+m = folium.Map(location=[center_lat, center_lon], zoom_start=15)
+
+# Step 6: Add overlays
+folium.raster_layers.ImageOverlay(
+    image=rgb_overlay,
+    bounds=[[south, west], [north, east]],
+    name="Sentinel-2 RGB",
+).add_to(m)
+
+folium.raster_layers.ImageOverlay(
+    image=label_rgba,
+    bounds=[[south, west], [north, east]],
+    name="CLC+ Label",
+    opacity=0.8,
+).add_to(m)
+
+# Step 7: Layer control
+folium.LayerControl().add_to(m)
+
+m
