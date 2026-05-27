@@ -409,4 +409,117 @@ ax.set_title(f"Sentinel-2 — {tile_filename}")
 ax.axis("off")
 plt.tight_layout()
 plt.show()
+
+# %%
+import geopandas as gpd
+from shapely.geometry import box
+
+# Create a GeoDataFrame with the tile extent in EPSG:3035
+tile_geom = box(*tile_bounds)
+gdf = gpd.GeoDataFrame({"tile": ["LU000"]}, geometry=[tile_geom], crs="EPSG:3035")
+
+print("EPSG:3035 bounds:")
+print(gdf.total_bounds)
+
+# Convert to WGS84 (latitude/longitude)
+gdf_wgs84 = gdf.to_crs("EPSG:4326")
+print("\nEPSG:4326 bounds:")
+print(gdf_wgs84.total_bounds)
+tile_gdf = gpd.GeoDataFrame(
+    {"tile": ["LU000"], "year": [2024]},
+    geometry=[box(*tile_bounds)],
+    crs=tile_crs,
+)
+tile_gdf
+# %%
+fig, ax = plt.subplots(figsize=(6, 6))
+extent = [tile_bounds.left, tile_bounds.right, tile_bounds.bottom, tile_bounds.top]
+ax.imshow(rgb, extent=extent)
+tile_gdf.boundary.plot(ax=ax, color="red", linewidth=2)
+ax.set_xlabel("Easting (m)")
+ax.set_ylabel("Northing (m)")
+ax.set_title("Sentinel-2 tile with boundary overlay (EPSG:3035)")
+plt.tight_layout()
+plt.show()
+
+
+
+# %%
+import geopandas as gpd
+from shapely.geometry import box
+
+tile_geom = box(*tile_bounds)
+gdf = gpd.GeoDataFrame({"tile": ["LU000"]}, geometry=[tile_geom], crs="EPSG:3035")
+gdf_wgs84 = gdf.to_crs("EPSG:4326")
+
+print("EPSG:3035 bounds:", gdf.total_bounds)
+print("EPSG:4326 bounds:", gdf_wgs84.total_bounds)
+
+
+# %%
+import geopandas as gpd
+from shapely.geometry import box
+
+nuts_url = (
+    "https://gisco-services.ec.europa.eu/distribution/v2/"
+    "nuts/geojson/NUTS_RG_01M_2021_3035_LEVL_3.geojson"
+)
+nuts = gpd.read_file(nuts_url)
+
+tile_geom = box(*tile_bounds)
+tile_gdf = gpd.GeoDataFrame(
+    {"tile": ["LU000"]}, geometry=[tile_geom], crs=tile_crs
+)
+
+# Spatial join: for each tile geometry, attach the columns of every NUTS3 region
+# whose geometry satisfies the predicate. `predicate="intersects"` keeps any region
+# that touches the tile (even partially); alternatives are "within" (tile fully
+# inside region) or "contains" (region fully inside tile). A tile straddling a
+# border can therefore match several NUTS3 regions — hence the loop below.
+joined = gpd.sjoin(tile_gdf, nuts, predicate="intersects")
+
+for _, row in joined.iterrows():
+    print(f"NUTS_ID: {row['NUTS_ID']}, NUTS_NAME: {row['NUTS_NAME']}")
+
+# tile_geom is in EPSG:3035 whose unit is the metre, so .area is in m². Divide by
+# 1e6 to get km². Computing area on a geographic CRS like EPSG:4326 (degrees) would
+# give a meaningless figure — always use a metric projection for measurements.
+area_km2 = tile_geom.area / 1e6
+print(f"Tile area: {area_km2:.2f} km²")
+
+
+# %%
+from rasterio.warp import transform_bounds
+
+west, south, east, north = transform_bounds(
+    tile_crs, "EPSG:4326", *tile_bounds
+)
+
+print(f"WGS84 extent: W={west:.4f}, S={south:.4f}, E={east:.4f}, N={north:.4f}")
+
+fig, ax = plt.subplots(figsize=(6, 6))
+ax.imshow(rgb, extent=[west, east, south, north])
+ax.set_xlabel("Longitude")
+ax.set_ylabel("Latitude")
+ax.set_title("Sentinel-2 tile in WGS84 coordinates")
+plt.tight_layout()
+plt.show()
+
+
+# %%
+import folium
+from folium.raster_layers import ImageOverlay
+
+center_lat = (south + north) / 2
+center_lon = (west + east) / 2
+
+m = folium.Map(location=[center_lat, center_lon], zoom_start=14)
+
+ImageOverlay(
+    image=rgb,
+    bounds=[[south, west], [north, east]],
+    opacity=0.7,
+).add_to(m)
+
+m
 # %%
