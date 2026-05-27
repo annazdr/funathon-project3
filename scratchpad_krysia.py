@@ -1,0 +1,6 @@
+# %%
+import rasterio
+# your code here …
+
+# %%
+# next exercise …
